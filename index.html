@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<title>MM</title>
+<meta name="description" content="Löse so viele Matheaufgaben wie möglich, bevor die Zeit abläuft.">
+
+<!-- iOS / PWA: als App zum Home-Bildschirm hinzufügbar, Vollbild -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MM">
+<meta name="theme-color" content="#14121f">
+<meta name="color-scheme" content="dark">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%231a1730'/%3E%3Cpath d='M35 8 16 35h12l-3 21 22-29H33z' fill='%2338d0ff'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%231a1730'/%3E%3Cpath d='M35 8 16 35h12l-3 21 22-29H33z' fill='%2338d0ff'/%3E%3C/svg%3E">
+
+<style>
+  :root {
+    /* Farben in OKLCH, Neutraltöne Richtung Indigo getönt */
+    --bg-0: oklch(0.15 0.03 275);
+    --bg-1: oklch(0.19 0.035 272);
+    --surface: oklch(0.23 0.036 272);
+    --surface-hi: oklch(0.28 0.04 272);
+    --line: oklch(0.42 0.03 272 / 0.55);
+    --line-soft: oklch(0.42 0.03 272 / 0.28);
+
+    --text: oklch(0.97 0.008 272);
+    --muted: oklch(0.74 0.02 272);
+    --faint: oklch(0.6 0.02 272);
+
+    --action: oklch(0.74 0.155 228);   /* Cyan-Blau: Aktion */
+    --action-ink: oklch(0.18 0.04 250);
+    --good: oklch(0.79 0.17 152);       /* Grün: richtig */
+    --gold: oklch(0.84 0.15 88);        /* Gold: Serie/Score */
+    --bad: oklch(0.67 0.2 25);          /* Rot: falsch / Zeit knapp */
+
+    --r-lg: 26px;
+    --r-md: 18px;
+    --r-sm: 13px;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+    --pad-top: env(safe-area-inset-top, 0px);
+    --pad-bot: env(safe-area-inset-bottom, 0px);
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: var(--bg-0);
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+
+  #app {
+    position: fixed;
+    inset: 0;
+    height: 100dvh;
+    display: grid;
+    /* Hintergrund-Tiefe ohne Glaseffekt: zwei ruhige Lichtquellen */
+    background:
+      radial-gradient(120% 80% at 15% -10%, oklch(0.32 0.09 270 / 0.55), transparent 60%),
+      radial-gradient(120% 90% at 90% 110%, oklch(0.3 0.1 230 / 0.4), transparent 55%),
+      linear-gradient(180deg, var(--bg-1), var(--bg-0));
+  }
+
+  .view {
+    grid-area: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: calc(var(--pad-top) + 22px) 22px calc(var(--pad-bot) + 20px);
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+    pointer-events: none;
+    transition: opacity 0.32s var(--ease), transform 0.32s var(--ease);
+  }
+  .view.active {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  /* ---------- Startbildschirm ---------- */
+  #start { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .brand { display: flex; align-items: center; gap: 12px; margin-top: 4vh; }
+  .bolt {
+    width: 46px; height: 46px; flex: none;
+    filter: drop-shadow(0 4px 14px oklch(0.74 0.155 228 / 0.5));
+  }
+  .brand h1 {
+    font-size: clamp(2.4rem, 12vw, 3.3rem);
+    line-height: 0.95;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin: 0;
+  }
+  .tagline {
+    margin: 18px 2px 0;
+    color: var(--muted);
+    font-size: 1.02rem;
+    line-height: 1.45;
+    max-width: 34ch;
+  }
+
+  .controls { margin-top: auto; display: flex; flex-direction: column; gap: 15px; padding-top: 18px; }
+  .field-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0 0 9px 4px;
+  }
+
+  /* iOS-typische Segmented Control mit gleitendem Regler */
+  .seg {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(var(--count), minmax(0, 1fr));
+    background: oklch(0.2 0.03 272 / 0.85);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--r-md);
+    padding: 5px;
+  }
+  .seg .thumb { display: none; }   /* Auswahl wird direkt am aktiven Button angezeigt (siehe unten) */
+  .seg button {
+    position: relative;
+    z-index: 1;
+    appearance: none;
+    background: none;
+    border: 0;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 12px 4px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: color 0.25s var(--ease), background 0.25s var(--ease);
+  }
+  .seg button[aria-selected="true"] {
+    color: var(--text);
+    background: var(--surface-hi);
+    box-shadow: 0 2px 10px oklch(0 0 0 / 0.35), inset 0 1px 0 oklch(1 0 0 / 0.06);
+  }
+
+  .startbar { margin-top: 26px; display: flex; align-items: center; gap: 14px; }
+  .best-line {
+    flex: 1; min-width: 0;
+    font-size: 0.95rem; color: var(--muted);
+  }
+  .best-line b { color: var(--gold); font-variant-numeric: tabular-nums; }
+
+  .sound-btn {
+    flex: none;
+    width: 50px; height: 50px;
+    display: grid; place-items: center;
+    background: var(--surface);
+    border: 1px solid var(--line-soft);
+    border-radius: 50%;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .sound-btn.off { color: var(--faint); }
+  .sound-btn svg { width: 22px; height: 22px; }
+
+  .btn-primary {
+    margin-top: 16px;
+    width: 100%;
+    padding: 19px;
+    border: 0;
+    border-radius: var(--r-md);
+    background: var(--action);
+    color: var(--action-ink);
+    font: inherit;
+    font-size: 1.22rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    box-shadow: 0 10px 30px oklch(0.74 0.155 228 / 0.35);
+    transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), filter 0.2s var(--ease);
+  }
+  .btn-primary:active { transform: scale(0.975); filter: brightness(1.05); box-shadow: 0 6px 18px oklch(0.74 0.155 228 / 0.3); }
+
+  .btn-secondary {
+    width: 100%;
+    padding: 17px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 1.08rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.2s var(--ease), background 0.2s var(--ease);
+  }
+  .btn-secondary:active { transform: scale(0.975); background: var(--surface-hi); }
+
+  /* ---------- Spielbildschirm ---------- */
+  #game { padding-top: calc(var(--pad-top) + 12px); }
+
+  .hud { display: flex; align-items: center; gap: 14px; }
+  .hud .stat { display: flex; flex-direction: column; }
+  .hud .stat .k { font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); }
+  .hud .stat .v { font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
+  .hud .score .v { color: var(--gold); }
+  .hud .spacer { flex: 1; }
+
+  .combo {
+    font-size: 1.05rem; font-weight: 800; color: var(--gold);
+    font-variant-numeric: tabular-nums;
+    padding: 6px 12px; border-radius: 999px;
+    background: oklch(0.84 0.15 88 / 0.14);
+    border: 1px solid oklch(0.84 0.15 88 / 0.3);
+    opacity: 0; transform: scale(0.8);
+    transition: opacity 0.25s var(--ease), transform 0.25s var(--ease);
+  }
+  .combo.show { opacity: 1; transform: scale(1); }
+  .combo.bump { animation: pop 0.34s var(--ease); }
+
+  .quit {
+    flex: none; width: 40px; height: 40px;
+    display: grid; place-items: center;
+    background: var(--surface); border: 1px solid var(--line-soft);
+    border-radius: 50%; color: var(--muted); cursor: pointer; font-size: 1.2rem;
+  }
+
+  .timerbar {
+    margin-top: 16px;
+    height: 10px;
+    border-radius: 999px;
+    background: oklch(0.28 0.03 272 / 0.7);
+    overflow: hidden;
+  }
+  .timerbar > i {
+    display: block; height: 100%; width: 100%;
+    border-radius: 999px;
+    transform-origin: left center;
+    background: var(--good);
+    transition: background 0.4s linear;
+  }
+  .time-num {
+    margin: 9px 2px 0;
+    font-size: 0.9rem; font-weight: 700; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    display: flex; justify-content: space-between;
+  }
+  .time-num .secs.low { color: var(--bad); }
+
+  .stage {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 30px;
+    min-height: 0;
+  }
+  .equation {
+    font-size: clamp(2.2rem, 12.5vw, 3.8rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+  .equation.enter { animation: eqEnter 0.34s var(--ease); }
+
+  .answer {
+    min-width: 3.4ch;
+    padding: 14px 30px;
+    border-radius: var(--r-md);
+    background: var(--surface);
+    border: 2px solid var(--line);
+    font-size: clamp(2.2rem, 11vw, 3rem);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    color: var(--text);
+    transition: border-color 0.18s var(--ease), background 0.18s var(--ease), color 0.18s var(--ease);
+  }
+  .answer.empty { color: var(--faint); }
+  .answer.correct { border-color: var(--good); background: oklch(0.79 0.17 152 / 0.16); color: var(--good); animation: pop 0.3s var(--ease); }
+  .answer.wrong { border-color: var(--bad); background: oklch(0.67 0.2 25 / 0.16); color: var(--bad); animation: shake 0.3s var(--ease); }
+
+  .pad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 11px;
+    margin-top: 8px;
+  }
+  .key {
+    appearance: none;
+    border: 1px solid var(--line-soft);
+    background: linear-gradient(180deg, var(--surface-hi), var(--surface));
+    color: var(--text);
+    font: inherit;
+    font-size: 1.9rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    padding: 0;
+    height: clamp(58px, 9.2vh, 78px);
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    display: grid; place-items: center;
+    box-shadow: 0 1px 0 oklch(1 0 0 / 0.05) inset, 0 2px 6px oklch(0 0 0 / 0.25);
+    transition: transform 0.09s var(--ease), background 0.12s var(--ease);
+  }
+  .key:active { transform: scale(0.94); background: var(--surface-hi); }
+  .key.util { font-size: 1.35rem; color: var(--muted); background: linear-gradient(180deg, var(--surface), oklch(0.2 0.03 272)); }
+
+  /* ---------- Ergebnisbildschirm ---------- */
+  #result { justify-content: center; text-align: center; gap: 4px; }
+  .result-badge {
+    align-self: center;
+    font-size: 0.82rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--action-ink); background: var(--gold);
+    padding: 7px 15px; border-radius: 999px;
+    margin-bottom: 18px;
+    opacity: 0; transform: translateY(-6px);
+    transition: opacity 0.4s var(--ease) 0.15s, transform 0.4s var(--ease) 0.15s;
+  }
+  .result-badge.show { opacity: 1; transform: none; }
+  .result-kicker { color: var(--muted); font-size: 1rem; font-weight: 600; }
+  .result-score {
+    font-size: clamp(4.5rem, 26vw, 7rem);
+    font-weight: 800; line-height: 0.95; letter-spacing: -0.03em;
+    color: var(--gold);
+    font-variant-numeric: tabular-nums;
+    margin: 4px 0 6px;
+  }
+  .result-stats {
+    display: flex; justify-content: center; gap: 34px;
+    margin: 20px 0 34px;
+  }
+  .result-stats .k { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--faint); }
+  .result-stats .v { font-size: 1.7rem; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 3px; }
+  .result-actions { display: flex; flex-direction: column; gap: 12px; margin-top: auto; }
+
+  /* ---------- Animationen ---------- */
+  @keyframes pop { 0%{transform:scale(1)} 45%{transform:scale(1.12)} 100%{transform:scale(1)} }
+  @keyframes eqEnter { from{opacity:0; transform:translateY(14px)} to{opacity:1; transform:none} }
+  @keyframes shake { 10%,90%{transform:translateX(-3px)} 30%,70%{transform:translateX(5px)} 50%{transform:translateX(-5px)} 0%,100%{transform:none} }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
+  .countdown-urgent { animation: pulse 1s ease-in-out infinite; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; transition-duration: 0.08s !important; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- START -->
+  <section class="view active" id="start">
+    <div class="brand">
+      <svg class="bolt" viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M35 6 14 36h13l-4 22 24-32H32z" fill="var(--action)"/>
+      </svg>
+      <h1>MM</h1>
+    </div>
+    <p class="tagline">Löse so viele Aufgaben wie möglich, bevor die Zeit abläuft. Je schneller du bist, desto höher deine Serie.</p>
+
+    <div class="controls">
+      <div>
+        <p class="field-label">Schwierigkeit</p>
+        <div class="seg" id="segDiff" style="--count:4">
+          <span class="thumb"></span>
+          <button data-i="0" aria-selected="true">Leicht</button>
+          <button data-i="1" aria-selected="false">Mittel</button>
+          <button data-i="2" aria-selected="false">Schwer</button>
+          <button data-i="3" aria-selected="false">Extrem</button>
+        </div>
+      </div>
+      <div>
+        <p class="field-label">Zahlen pro Aufgabe</p>
+        <div class="seg" id="segTerms" style="--count:3">
+          <span class="thumb"></span>
+          <button data-i="0" data-val="2" aria-selected="true">2</button>
+          <button data-i="1" data-val="3" aria-selected="false">3</button>
+          <button data-i="2" data-val="4" aria-selected="false">4</button>
+        </div>
+      </div>
+      <div>
+        <p class="field-label">Zeit</p>
+        <div class="seg" id="segTime" style="--count:3">
+          <span class="thumb"></span>
+          <button data-i="0" data-val="30" aria-selected="false">30 s</button>
+          <button data-i="1" data-val="60" aria-selected="true">60 s</button>
+          <button data-i="2" data-val="120" aria-selected="false">120 s</button>
+        </div>
+      </div>
+
+      <div class="startbar">
+        <div class="best-line">Bestleistung: <b id="bestStart">0</b></div>
+        <button class="sound-btn" id="soundBtn" aria-label="Ton an/aus"></button>
+      </div>
+      <button class="btn-primary" id="startBtn">Los geht's</button>
+    </div>
+  </section>
+
+  <!-- SPIEL -->
+  <section class="view" id="game">
+    <div class="hud">
+      <div class="stat score"><span class="k">Punkte</span><span class="v" id="score">0</span></div>
+      <div class="stat"><span class="k">Gelöst</span><span class="v" id="solved">0</span></div>
+      <div class="spacer"></div>
+      <div class="combo" id="combo">×2</div>
+      <button class="quit" id="quitBtn" aria-label="Beenden">✕</button>
+    </div>
+
+    <div class="timerbar"><i id="timerFill"></i></div>
+    <div class="time-num"><span>Zeit</span><span class="secs" id="secs">60</span></div>
+
+    <div class="stage">
+      <div class="equation" id="equation">7 + 5</div>
+      <div class="answer empty" id="answer">?</div>
+    </div>
+
+    <div class="pad" id="pad">
+      <button class="key" data-d="1">1</button>
+      <button class="key" data-d="2">2</button>
+      <button class="key" data-d="3">3</button>
+      <button class="key" data-d="4">4</button>
+      <button class="key" data-d="5">5</button>
+      <button class="key" data-d="6">6</button>
+      <button class="key" data-d="7">7</button>
+      <button class="key" data-d="8">8</button>
+      <button class="key" data-d="9">9</button>
+      <button class="key util" data-act="clear" aria-label="Löschen">C</button>
+      <button class="key" data-d="0">0</button>
+      <button class="key util" data-act="back" aria-label="Zurück">⌫</button>
+    </div>
+  </section>
+
+  <!-- ERGEBNIS -->
+  <section class="view" id="result">
+    <span class="result-badge" id="resultBadge">Neue Bestleistung</span>
+    <div class="result-kicker">Deine Punkte</div>
+    <div class="result-score" id="finalScore">0</div>
+    <div class="result-stats">
+      <div><div class="k">Gelöst</div><div class="v" id="finalSolved">0</div></div>
+      <div><div class="k">Beste Serie</div><div class="v" id="finalCombo">×1</div></div>
+      <div><div class="k">Rekord</div><div class="v" id="finalBest">0</div></div>
+    </div>
+    <div class="result-actions">
+      <button class="btn-primary" id="againBtn">Nochmal</button>
+      <button class="btn-secondary" id="menuBtn">Menü</button>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- Einstellungen / Zustand ----------
+  const DIFF = ["leicht", "mittel", "schwer", "extrem"];
+  const state = {
+    diff: 0,
+    terms: 2,
+    duration: 60,
+    sound: JSON.parse(localStorage.getItem("mb_sound") ?? "true"),
+    running: false,
+  };
+  const game = {};
+
+  const COMBO_WINDOW = 4000;   // ms: so schnell muss die nächste Lösung kommen, damit die Serie wächst
+  const SPEED_MAX = 2500;      // ms: schneller als das gibt Tempo-Bonus
+  const COMBO_CAP = 5;
+
+  // ---------- Ton (WebAudio, iOS-sicher, erst nach Tipp) ----------
+  let actx = null;
+  function initAudio() {
+    if (actx || !state.sound) return;
+    try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; }
+  }
+  function tone(freq, dur, type = "sine", vol = 0.14, when = 0) {
+    if (!state.sound || !actx) return;
+    const t = actx.currentTime + when;
+    const osc = actx.createOscillator();
+    const g = actx.createGain();
+    osc.type = type; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g).connect(actx.destination);
+    osc.start(t); osc.stop(t + dur + 0.02);
+  }
+  const sndCorrect = () => { tone(660, 0.11, "triangle", 0.15); tone(990, 0.13, "triangle", 0.13, 0.055); };
+  const sndCombo   = () => { tone(880, 0.1, "triangle", 0.13); tone(1320, 0.14, "triangle", 0.12, 0.06); };
+  const sndWrong   = () => { tone(150, 0.16, "sawtooth", 0.12); };
+  const sndTick    = () => { tone(440, 0.05, "square", 0.07); };
+  const sndEnd     = () => { tone(520, 0.13, "triangle", 0.14); tone(390, 0.16, "triangle", 0.13, 0.11); tone(300, 0.24, "triangle", 0.12, 0.22); };
+
+  // ---------- Aufgaben erzeugen ----------
+  const ri = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+  let lastKey = "";
+
+  // Alle Stufen nutzen alle vier Rechenarten; die Schwierigkeit steuert die Zahlengröße.
+  const OPLIST = ["+", "-", "×", "÷"];
+  const CFG = {
+    leicht: { addHi: 250,  subRes: 50,  divMax: 9,  divRes: 12 },   // = früheres "Schwer"
+    mittel: { addHi: 700,  subRes: 120, divMax: 12, divRes: 25 },
+    schwer: { addHi: 1800, subRes: 300, divMax: 15, divRes: 50 },
+    extrem: { addHi: 2400, subRes: 500, divMax: 18, divRes: 80 },
+  };
+  const MUL = { 2: 99, 3: 21, 4: 9 };   // Faktor-Obergrenze je Zahlenanzahl (Ergebnis bleibt 4-stellig)
+
+  function makeProblem() {
+    const cfg = CFG[DIFF[state.diff]];
+    const t = state.terms;
+    let ans = 0, text = "";
+    for (let guard = 0; guard < 80; guard++) {
+      const op = OPLIST[ri(0, 3)];
+      if (op === "+") {
+        const nums = Array.from({ length: t }, () => ri(2, cfg.addHi));
+        ans = nums.reduce((s, x) => s + x, 0);
+        text = nums.join(" + ");
+      } else if (op === "-") {
+        // Ergebnis vorab festlegen, damit die Kette nie negativ wird
+        const subs = Array.from({ length: t - 1 }, () => ri(2, cfg.addHi));
+        const r = ri(1, cfg.subRes);
+        ans = r;
+        text = [r + subs.reduce((s, x) => s + x, 0), ...subs].join(" − ");
+      } else if (op === "×") {
+        const nums = Array.from({ length: t }, () => ri(2, MUL[t]));
+        ans = nums.reduce((p, x) => p * x, 1);
+        text = nums.join(" × ");
+      } else {
+        // Division: Dividend bleibt höchstens 4-stellig und geht an jedem Schritt glatt auf
+        const divs = Array.from({ length: t - 1 }, () => ri(2, cfg.divMax));
+        const prod = divs.reduce((p, x) => p * x, 1);
+        const rMax = Math.min(cfg.divRes, Math.floor(9999 / prod));
+        if (rMax < 2) continue;
+        const r = ri(2, rMax);
+        ans = r;
+        text = [r * prod, ...divs].join(" ÷ ");
+      }
+      if (text !== lastKey) break;
+    }
+    lastKey = text;
+    return { text, ans };
+  }
+
+  // ---------- Segmented Controls ----------
+  function wireSeg(seg, onPick) {
+    seg.querySelectorAll("button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", "false"));
+        btn.setAttribute("aria-selected", "true");
+        seg.style.setProperty("--i", btn.dataset.i);
+        onPick(btn);
+      });
+    });
+    const sel = seg.querySelector('[aria-selected="true"]');
+    seg.style.setProperty("--i", sel.dataset.i);
+  }
+  wireSeg($("segDiff"), (btn) => { state.diff = +btn.dataset.i; refreshBest(); });
+  wireSeg($("segTerms"), (btn) => { state.terms = +btn.dataset.val; refreshBest(); });
+  wireSeg($("segTime"), (btn) => { state.duration = +btn.dataset.val; refreshBest(); });
+
+  // ---------- Bestleistung ----------
+  const bestKey = () => "mb_best_" + DIFF[state.diff] + "_" + state.terms + "_" + state.duration;
+  const getBest = () => +(localStorage.getItem(bestKey()) || 0);
+  function refreshBest() { $("bestStart").textContent = getBest(); }
+
+  // ---------- Ton-Umschalter ----------
+  const spk = (on) => on
+    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m17 9 5 5M22 9l-5 5"/></svg>';
+  function renderSound() {
+    $("soundBtn").innerHTML = spk(state.sound);
+    $("soundBtn").classList.toggle("off", !state.sound);
+  }
+  $("soundBtn").addEventListener("click", () => {
+    state.sound = !state.sound;
+    localStorage.setItem("mb_sound", JSON.stringify(state.sound));
+    renderSound();
+    if (state.sound) { initAudio(); sndCorrect(); }
+  });
+
+  // ---------- Ansichten wechseln ----------
+  function show(id) {
+    document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === id));
+  }
+
+  // ---------- Spielablauf ----------
+  const answerEl = $("answer");
+  const eqEl = $("equation");
+
+  // Schrift der Aufgabe so verkleinern, dass auch lange Ketten in eine Zeile passen
+  const EQ_MAX_PX = 60;
+  function fitEquation() {
+    eqEl.style.fontSize = EQ_MAX_PX + "px";
+    const avail = eqEl.parentElement.clientWidth * 0.97;
+    if (eqEl.scrollWidth > avail) {
+      eqEl.style.fontSize = Math.max(18, EQ_MAX_PX * avail / eqEl.scrollWidth) + "px";
+    }
+  }
+
+  function setAnswer(str) {
+    game.typed = str;
+    answerEl.textContent = str === "" ? "?" : str;
+    answerEl.classList.toggle("empty", str === "");
+    answerEl.classList.remove("correct", "wrong");   // altes Feedback beim Weitertippen/neuen Problem entfernen
+  }
+
+  function newProblem() {
+    const p = makeProblem();
+    game.answer = p.ans;
+    game.qStart = performance.now();
+    eqEl.textContent = p.text;
+    fitEquation();
+    eqEl.classList.remove("enter"); void eqEl.offsetWidth; eqEl.classList.add("enter");
+    setAnswer("");
+  }
+
+  function startGame() {
+    initAudio();
+    Object.assign(game, {
+      score: 0, solved: 0, combo: 1, bestCombo: 1,
+      typed: "", answer: 0, qStart: 0,
+      start: performance.now(), paused: 0, pauseAt: 0,
+      lastTick: -1,
+    });
+    state.running = true;
+    $("score").textContent = "0";
+    $("solved").textContent = "0";
+    $("combo").classList.remove("show");
+    $("combo").textContent = "";
+    $("timerFill").style.transform = "scaleX(1)";
+    $("timerFill").style.background = "var(--good)";
+    show("game");
+    newProblem();
+    requestAnimationFrame(loop);
+  }
+
+  function loop(now) {
+    if (!state.running) return;
+    const elapsed = now - game.start - game.paused;
+    const remain = Math.max(0, state.duration * 1000 - elapsed);
+    const frac = remain / (state.duration * 1000);
+
+    $("timerFill").style.transform = "scaleX(" + frac + ")";
+    // Farbverlauf Grün -> Bernstein -> Rot
+    const hue = 25 + frac * 125;
+    $("timerFill").style.background = "oklch(0.78 0.17 " + hue + ")";
+
+    const secs = Math.ceil(remain / 1000);
+    const secEl = $("secs");
+    if (secs !== game.lastTick) {
+      secEl.textContent = secs;
+      const low = secs <= 5;
+      secEl.classList.toggle("low", low);
+      secEl.parentElement.classList.toggle("countdown-urgent", low);
+      if (low && secs > 0 && game.lastTick >= 0) sndTick();
+      game.lastTick = secs;
+    }
+
+    if (remain <= 0) { endGame(); return; }
+    requestAnimationFrame(loop);
+  }
+
+  function flash(cls) {
+    answerEl.classList.remove("correct", "wrong");
+    void answerEl.offsetWidth;
+    answerEl.classList.add(cls);
+  }
+
+  function correct() {
+    const took = performance.now() - game.qStart;
+    const speedBonus = Math.max(0, Math.round((SPEED_MAX - took) / SPEED_MAX * 15));
+    const pts = Math.round((10 + speedBonus) * game.combo);
+
+    game.score += pts;
+    game.solved += 1;
+    $("score").textContent = game.score;
+    $("solved").textContent = game.solved;
+
+    // Serie aktualisieren
+    const prevCombo = game.combo;
+    game.combo = took <= COMBO_WINDOW ? Math.min(game.combo + 1, COMBO_CAP) : 1;
+    game.bestCombo = Math.max(game.bestCombo, game.combo);
+
+    const comboEl = $("combo");
+    if (game.combo >= 2) {
+      comboEl.textContent = "×" + game.combo;
+      comboEl.classList.add("show");
+      comboEl.classList.remove("bump"); void comboEl.offsetWidth; comboEl.classList.add("bump");
+      if (game.combo > prevCombo && game.combo >= 3) sndCombo(); else sndCorrect();
+    } else {
+      comboEl.classList.remove("show");
+      sndCorrect();
+    }
+
+    flash("correct");
+    $("score").classList.remove("bump");
+    setTimeout(newProblem, 110);
+  }
+
+  function wrong() {
+    flash("wrong");
+    sndWrong();
+    game.combo = 1;
+    $("combo").classList.remove("show");
+    setAnswer("");
+  }
+
+  function pressDigit(d) {
+    if (!state.running) return;
+    if (game.typed.length >= 4) return;
+    const next = game.typed + d;
+    setAnswer(next);
+    if (Number(next) === game.answer) { correct(); return; }
+    if (next.length >= String(game.answer).length) wrong();
+  }
+
+  // Keypad: pointerdown = sofortige Reaktion, kein 300ms-Delay
+  $("pad").addEventListener("pointerdown", (e) => {
+    const key = e.target.closest(".key");
+    if (!key) return;
+    e.preventDefault();
+    if (key.dataset.d != null) pressDigit(key.dataset.d);
+    else if (key.dataset.act === "back") setAnswer(game.typed.slice(0, -1));
+    else if (key.dataset.act === "clear") setAnswer("");
+  }, { passive: false });
+
+  // Physische Tastatur (für Test am Rechner)
+  window.addEventListener("keydown", (e) => {
+    if (!state.running) return;
+    if (e.key >= "0" && e.key <= "9") pressDigit(e.key);
+    else if (e.key === "Backspace") setAnswer(game.typed.slice(0, -1));
+    else if (e.key === "Escape") endGame();
+  });
+
+  function endGame() {
+    if (!state.running) return;
+    state.running = false;
+    sndEnd();
+
+    const best = getBest();
+    const isBest = game.score > best;
+    if (isBest) localStorage.setItem(bestKey(), game.score);
+
+    $("finalScore").textContent = game.score;
+    $("finalSolved").textContent = game.solved;
+    $("finalCombo").textContent = "×" + game.bestCombo;
+    $("finalBest").textContent = Math.max(best, game.score);
+
+    const badge = $("resultBadge");
+    badge.classList.remove("show");
+    badge.style.display = isBest ? "" : "none";
+    if (isBest) requestAnimationFrame(() => badge.classList.add("show"));
+
+    show("result");
+    refreshBest();
+  }
+
+  // Pause bei App-Wechsel (fair bleiben)
+  document.addEventListener("visibilitychange", () => {
+    if (!state.running) return;
+    if (document.hidden) { game.pauseAt = performance.now(); }
+    else if (game.pauseAt) { game.paused += performance.now() - game.pauseAt; game.pauseAt = 0; }
+  });
+
+  // ---------- Buttons ----------
+  $("startBtn").addEventListener("click", startGame);
+  $("againBtn").addEventListener("click", startGame);
+  $("menuBtn").addEventListener("click", () => { refreshBest(); show("start"); });
+  $("quitBtn").addEventListener("click", endGame);
+
+  // ---------- Init ----------
+  renderSound();
+  refreshBest();
+})();
+</script>
+</body>
+</html>
